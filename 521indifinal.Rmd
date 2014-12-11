@@ -1,0 +1,304 @@
+---
+title: "521indi.final"
+author: "Yikun Zhou"
+date: "12/6/2014"
+output: html_document
+---
+#Preparation
+
+First, before the project, I set current directory as working directory, prepare all the packages that will be used in the project with function "check_packages", the "check_packges" function is sourced from the function in 523 class. 
+
+```{r}
+setwd(getwd())
+check_packages = function(names)
+{
+  for(name in names)
+  {
+    if (!(name %in% installed.packages()))
+      install.packages(name, repos="http://cran.us.r-project.org")
+    
+    library(name, character.only=TRUE)
+  }
+}
+
+check_packages(c("httr","XML","stringr","jsonlite","rgeos","maptools","plyr","rvest","rmarkdown","Matrix","microbenchmark","xtable","Rcpp","testthat","jpeg"))
+```
+
+
+#1. Sparse Matrices
+
+## Task1
+
+In task 1, I will create and store the two matrix given by the project in two different type of storage. The first type is dense storage, just store the whole matrix, and the second type is sparse storage, store matrix with its values and coordinates.  
+
+First, I will create two matrix (m1 & m2) with bdiag & rBind functions in Matrix package, which is much easier than create them directly.
+
+```{r}
+# Create m1
+# Create diagnal part of the matrix 1 with bdiag function
+diag1 <- list(matrix(1,5,5),matrix(1,10,10),matrix(0,70,70),matrix(1,10,10),matrix(1,5,5))
+m1 <- bdiag(diag1)
+
+# Fill values in the part that are not in the diagnal
+m1[86:95,1:5] <- c(rep(1,10*5))
+m1[1:5,86:95] <- c(rep(1,10*5))
+
+# Create m2
+# Create matrix with rBind function
+m2 <- rBind(Matrix(1,3,1),Matrix(0,10,1),Matrix(1,7,1),Matrix(0,30,1),Matrix(1,7,1)
+            ,Matrix(0,42,1),Matrix(1,1,1))
+```
+
+Second, with matrix created, I stored them in different types. First is Dense storage. Use Matrix function with argument sparse=False to dense store matrix
+```{r}
+# Use Matrix function with argument sparse=False to dense store matrix 
+ds.m1 <- Matrix(m1,sparse=F)
+ds.m2 <- Matrix(m2,sparse=F)
+
+# This matrix will be used in Cholesky decomposition.
+ds.m1_d <- Matrix(ds.m1+diag(2,100),sparse=F)
+```
+
+Then is Sparse storage, with sparseMatrix function. I extract the sparseMatrix argument i (row coefficients) and j (column coefficients) from m1, m2 using "which" function with argument arr.ind=TRUE. And then construct the sparse matrix.
+```{r}
+# Extract the sparseMatrix argument i (row coefficients) and j (column coefficients) from m1,m2
+Ind.1 <- which(m1==1,arr.ind=T)
+i.1 <- c(Ind.1[,1])
+j.1 <- c(Ind.1[,2])
+x.1 <- c(rep(1,length(Ind.1[,1])))
+Ind.2 <- which(m2==1,arr.ind=T)
+i.2 <- c(Ind.2[,1])
+j.2 <- c(Ind.2[,2])
+x.2 <- c(rep(1,length(Ind.2[,1])))
+
+# Construct sparse Matrix with sparseMatrix function
+ss.m1 <- sparseMatrix(i.1, j.1, x = x.1)
+ss.m2 <- sparseMatrix(i.2, j.2, x = x.2)
+
+# This matrix will be used in Cholesky decomposition.
+ss.m1_d <- ss.m1 + diag(2,100)
+```
+
+Finally, I plot the two matrix in different type of storage with image function to make sure that the sturcture is right.
+```{r}
+# Plot matrix to make sure that the structure is correct.
+image(ds.m1,main="Dense Storage for m1")
+image(ss.m1,main="Sparse Storage for m1")
+image(ds.m2,main="Dense Storage for m2")
+image(ss.m2,main="Sparse Storage for m2")
+```
+
+#Task 2
+
+In task 2 I compare the system running time of different type of storage. I test the system time of each operation of two matrix with microbenchmark function, which will return the system time result of mean, median, min, max, 25% & 75% quantile, number of evaluation.  
+
+After that, we can compare the performance of two matrix with different type of storage
+
+```{r}
+# Get the system time of each operation for different type of storage
+microbenchmark(crossprod(ds.m2,ds.m2),crossprod(ss.m2,ss.m2),
+               ds.m1%*%ds.m2,ss.m1%*%ss.m2,
+               ds.m1%*%ds.m1,ss.m1%*%ss.m1,
+               chol(ds.m1_d),chol(ss.m1_d),
+               times=20)
+```
+
+From the result, we can infer that m1 with sparse storage performs better than it with dense storage, however, m2 with sparse storage performs worse than it with dense storage.  
+It seems that a large matrix will be more efficient with sparse storage, but a small matrix with sparse storage will be less efficient compare to dense storage.
+  
+  
+    
+# 2.Shuffling
+##TASK 1
+
+In this task, I write the sheffle function to uniformally shuffle elements' position in one vector. The input should be a vector with n elements, the output will be a vector with same elements in different order
+
+```{r}
+shuffle = function(v)
+{
+    # Detect input type, if not vector, return error
+    stopifnot(is.vector(v))
+    
+    # Detect lenth of vector
+    length <- length(v)
+    stopifnot(length>1)
+    
+    # Sample n (n equals the numer of elements  in vector) from uniform(0,1)
+    rd <- runif(length,0,1)
+    
+    # Order the samples and get the random position vector ord
+    ord <- order(rd)
+    
+    # Reorder vector with random position vector ord
+    v <- v[ord]
+    return(v)
+}
+```
+
+#TASK2
+
+In this task, I designed a graphical approch to test the unbiasness of the shuffle function.  
+The basic idea is that given any initial configuration, all possible final configurations are equally likely. Which can also be intepreted that each elements have same frequncy to appear in every position.  
+
+So here I draw histograms to show the frequncy of elements appearing in every possible position after n times shuffling. If the histograms are basically uniformly distributed, they can show that the shuffle function is unbiased and can put produce uniform output.  
+
+Here I used a vector of 30 elements and a vector 
+
+```{r}
+# Create a function to create histogram for randomly chosen 9 element
+test <- function(vector,ele_num,N){
+  stopifnot(ele_num<=length(vector))
+  for( j in 1:ele_num){
+    # Created vector to store the position of element j in each iteration of shuffle
+    which <- sample(ele_num,ele_num)
+    position <- c(which[j],rep(0,N-1))
+    element <- vector[which[j]]
+    
+    # Run a loop to shuffle vector for N times 
+    for (i in 2:N){
+      shf <- shuffle(vector)
+      position_i <- which(shf == element)
+      position[i] <- position_i
+    }
+    
+    # Plot the result of shuffling
+    hist(position,main=paste0("position frequency for element",j))
+  }
+}
+
+# Here I will try different vector size to test the unbiaseness
+# Randomly Create vector with 2, 6, 30 elements sample from 1:100 and test them respectively
+par(mfrow=c(1,2))
+vector2 <- sample(1:100,2)
+test(vector2,2,1000)
+
+par(mfrow=c(2,3))
+vector2 <- sample(1:100,6)
+test(vector2,6,1000)
+
+# Here I just test 9 random elements 
+par(mfrow=c(3,3))
+vector1 <- sample(1:100,30)
+test(vector1,9,1000)
+```
+  
+It seems that with different sample size, the result always show that the shuffle function is unbiased and can create uniform output.
+   
+# 3.Rotten Tomatoes
+
+In this task, I will use API got from Rotten Tomatoes to list top 10 box office movies and plot their posters in order.  
+
+1. I will use APIkey to get a list of infomation of top 10 movies.  
+2. Match out the name of those movies and construct a dataframe.  
+3. Go to each Rotten Tomatoes websites usind url listed in the API.  
+4. Grab the poster image of each movies from the website.
+5. Plot all posters in order.
+
+For example, in current week (Dec.7 - Dec.13), the posters function will return a data frame from rank1 (The Hunger Games: Mockingjay - Part 1) to rank 10(Birdman), and their posters aligning from left to right respectively.
+
+```{r,fig.width=10}
+posters = function(api_key = "nftqmryemme7wnmrz9qdckwt")
+{
+    # Use API to get information of top 10 movies
+    web <- html(paste0("http://api.rottentomatoes.com/api/public/v1.0/lists/movies/box_office.json?apikey=",api_key,"&limit=10"))
+    info <- as(web,"character")
+    
+    # Match out the name of each top 10 movies, and put them into a dataframe
+    match <- str_match_all(info,'"title":"(.*?)","year"')
+    list <- as.data.frame(unlist(match))[11:20,]
+    mv_rank <- data.frame("rank"=c(1:10),"movies"=list)
+    
+    # Print the ranking result
+    print(mv_rank)
+    
+    # Match out the website of each movies
+    match_web <- str_match_all(info,'"alternate":"(.*?)","cast"') %>%
+                  unlist()
+    
+    # Run a loop to download the poster for each movies
+    for (i in 1:10){
+      # Get image information from website of movie i
+      mov_web <- html(match_web[i+10])
+      node <- html_nodes(mov_web,"#mob_trailer .panel-heading , #poster_link img")
+      
+      # Match out the address of poster
+      img_web <- str_match_all(as(node[[1]],"character"),'src=\"(.*?)" width')%>%
+                  unlist()
+      
+      # Download the poster to local
+      download.file(img_web[2],paste0(i,".jpeg"))
+    }
+    
+    # Run for loops to plot posters
+    par(mfrow=c(1,1))
+    
+    # Because I just plot top ten movies, so I made some hard coding here
+    # to ensure 5 movies in one plot. And rank high to low from left to right
+    # The fisrt 1-5 posters
+    plot(1, type="n", xlim=c(120, 580), ylim=c(110, 385),xaxt='n', yaxt='n',ann=FALSE)
+    mtext("From left to right, rank 1 to 5 respectively",side=1,cex=1.1)
+    
+    # For loop to read jpg downloaded and plot it
+    for(i in 1:5){
+          imagei <- readJPEG(paste0(i,".jpeg"))
+          rasterImage(imagei,i*100, 100, i*100+100, 400)
+      }
+    
+    # The next 6-10 posters.
+    plot(1, type="n", xlim=c(120, 580), ylim=c(110, 385),xaxt='n', yaxt='n',ann=FALSE)
+    mtext("From left to right, rank 6 to 10 respectively",side=1,cex=1.1)
+    
+    # For loop to read jpg downloaded and plot it
+    for(i in 6:10){
+          imagei <- readJPEG(paste0(i,".jpeg"))
+          rasterImage(imagei,(i-5)*100, 100, (i-5)*100+100, 400)
+      }
+    
+}
+
+# Run the function to generate the result
+posters("nftqmryemme7wnmrz9qdckwt")
+
+```
+
+
+# 4.Testthat
+In this task I used testthat package to test the function given by the project, I mainly tested three aspects of the function:  
+1. The input type should be numeric, otherwise return error  
+2. The output type should be integer (or numeric)  
+3. The output value with specific input should be equal to values we calculate by hand.
+
+```{r}
+# The given function
+cppFunction("
+    int fib(int n) 
+    {
+        if (n < 2) 
+            return(n);
+        return( fib(n-1) + fib(n-2) );
+    }
+")
+
+context("Test fib")
+
+# Test the given function with test_that function
+test_that("fib", {
+  
+  # Test that if input type is not numeric, the function should return error
+  expect_error(fib("a"))
+  expect_error(fib(c(1,2)))
+  
+  # Test that output value with specific input should be equal to value we calculate
+  expect_equal(fib(0),0)
+  expect_equal(fib(0.1),0)
+  expect_equal(fib(1),1)
+  expect_equal(fib(2),1)
+  expect_equal(fib(10),55)
+  
+  # Test that output type should be integer (or numeric)
+  expect_true(is.integer(fib(11)))
+  expect_true(is.numeric(fib(11)))
+  expect_false(is.character(fib(11)))
+})
+```
+
